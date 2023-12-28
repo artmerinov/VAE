@@ -45,7 +45,7 @@ def augment(img) -> torch.Tensor:
 
 
 def inverse_normalize(img: torch.Tensor) -> torch.Tensor:
-    inv_normalize = transforms.Normalize(mean=(-1, -1, -1), std=(2, 2, 2))
+    inv_normalize = transforms.Normalize(mean=(-1.0, -1.0, -1.0), std=(2.0, 2.0, 2.0))
     img = inv_normalize(img)
-    img = torch.clamp(img, 0, 1)
+    img = torch.clamp(img, 0.0, 1.0)
     return img
