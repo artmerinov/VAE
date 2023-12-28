@@ -38,7 +38,7 @@ class Encoder(nn.Module):
             nn.Tanh(),
         )
         self.conv_mu = nn.Conv2d(128, latent_dim, kernel_size=4, stride=1, padding=0, bias=False)
-        self.conv_log_sd = nn.Conv2d(128, latent_dim, kernel_size=4, stride=1, padding=0, bias=False)
+        self.conv_log_var = nn.Conv2d(128, latent_dim, kernel_size=4, stride=1, padding=0, bias=False)
         
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x: [B, 3, 128, 128]
@@ -50,59 +50,58 @@ class Encoder(nn.Module):
         
         # Compute mean and logarithm of sd
         # (use logarithm to produce negative values)
-        mu =  self.conv_mu(x) # [B, 128, 1, 1]
-        log_sd = self.conv_log_sd(x) # [B, 128, 1, 1]
+        mu =  self.conv_mu(x) # [B, latent_dim, 1, 1]
+        log_var = self.conv_log_var(x) # [B, latent_dim, 1, 1]
 
-        return mu, log_sd
+        return mu, log_var
     
 
 class Decoder(nn.Module):
     def __init__(self, latent_dim: int) -> None:
         super(Decoder, self).__init__()
 
-        self.deconv0 = nn.ConvTranspose2d(latent_dim, 128, kernel_size=4, stride=1, padding=0, bias=False)
-
-        self.deconv1 = nn.Sequential( 
+        self.deconv1 = nn.Sequential(
+            nn.ConvTranspose2d(latent_dim, 128, kernel_size=4, stride=1, padding=0, bias=False),
+            nn.BatchNorm2d(128),
+            nn.Upsample(scale_factor=2, mode="bilinear"),
+            nn.Tanh(),
+        )
+        self.deconv2 = nn.Sequential(
             nn.ConvTranspose2d(128, 64, kernel_size=3, stride=1, padding=1, bias=False),
             nn.BatchNorm2d(64),
             nn.Upsample(scale_factor=2, mode="bilinear"),
             nn.Tanh(),
         )
-        self.deconv2 = nn.Sequential( 
+        self.deconv3 = nn.Sequential(
             nn.ConvTranspose2d(64, 32, kernel_size=3, stride=1, padding=1, bias=False),
             nn.BatchNorm2d(32),
             nn.Upsample(scale_factor=2, mode="bilinear"),
             nn.Tanh(),
         )
-        self.deconv3 = nn.Sequential( 
+        self.deconv4 = nn.Sequential(
             nn.ConvTranspose2d(32, 16, kernel_size=3, stride=1, padding=1, bias=False),
             nn.BatchNorm2d(16),
             nn.Upsample(scale_factor=2, mode="bilinear"),
             nn.Tanh(),
         )
-        self.deconv4 = nn.Sequential( 
+        self.deconv5 = nn.Sequential(
             nn.ConvTranspose2d(16, 8, kernel_size=3, stride=1, padding=1, bias=False),
             nn.BatchNorm2d(8),
             nn.Upsample(scale_factor=2, mode="bilinear"),
             nn.Tanh(),
         )
-        self.deconv5 = nn.Sequential( 
-            nn.ConvTranspose2d(8, 3, kernel_size=3, stride=1, padding=1, bias=False),
-            nn.BatchNorm2d(3),
-            nn.Upsample(scale_factor=2, mode="bilinear"),
-            nn.Tanh(),
-        )
+        self.final_layer = nn.ConvTranspose2d(8, 3, kernel_size=3, stride=1, padding=1, bias=False)
 
-    def forward(self, z):
+    def forward(self, z: torch.Tensor) -> torch.Tensor:
         # z: [B, latent_dim, 1, 1]
-        z = self.deconv0(z) # [B, 128, 4, 4]
-        z = self.deconv1(z) # [B, 64, 8, 8]
-        z = self.deconv2(z) # [B, 32, 16, 16]
-        z = self.deconv3(z) # [B, 16, 32, 32]
-        z = self.deconv4(z) # [B, 8, 64, 64]
-        z = self.deconv5(z) # [B, 3, 128, 128]
-        return z
-    
+        x = self.deconv1(z) # [B, 128, 4, 4]
+        x = self.deconv2(x) # [B, 64, 8, 8]
+        x = self.deconv3(x) # [B, 32, 16, 16]
+        x = self.deconv4(x) # [B, 16, 32, 32]
+        x = self.deconv5(x) # [B, 8, 64, 64]
+        x = self.final_layer(x) # [B, 3, 128, 128]
+        return x
+
     
 class VAE(nn.Module):
     def __init__(self, latent_dim: int) -> None:
@@ -111,10 +110,13 @@ class VAE(nn.Module):
         self.decoder = Decoder(latent_dim=latent_dim)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        mu, log_sd = self.encoder(x)
-        z = self.reparameterization_trick(mu=mu, sd=torch.exp(log_sd))
+        mu, log_var = self.encoder(x)
+        # log(var) = log(sd**2)
+        # sd**2 = exp(log(var))
+        # sd = exp(0.5*log(var))
+        z = self.reparameterization_trick(mu=mu, sd=torch.exp(0.5*log_var))
         x_hat = self.decoder(z)
-        return x_hat, mu, log_sd
+        return x_hat, mu, log_var
     
     def reparameterization_trick(self, mu: torch.Tensor, sd: torch.Tensor) -> torch.Tensor:
         eps = torch.randn_like(mu) # sample from N(0,I)
