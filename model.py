@@ -45,7 +45,7 @@ class Encoder(nn.Module):
         x = self.layer4(x) # [B, 256,   8,   8]
         x = self.layer5(x) # [B, 512,   4,   4]
         
-        # Compute mean and logarithm of sd
+        # Compute mean and logarithm of variance
         # (use logarithm to produce negative values)
         mu = self.conv_mu(x)           # [B, 512, 1, 1]
         log_var = self.conv_log_var(x) # [B, 512, 1, 1]
